@@ -1,0 +1,221 @@
+Project Overview
+
+This project aims to fine-tune the CogVideoX 2b generative AI video model to perform inpainting tasks on image sequences. Inpainting involves filling in missing or masked regions in images or videos, ensuring the reconstructed areas are visually coherent with the surrounding content. Instead of modifying the existing train_cogvideox_lora.py script directly, we will create a series of new scripts in the "inpainting" folder that leverage the code from this script and the rest of the repository. These new scripts will work together to train a LoRA (Low-Rank Adaptation) model specifically adapted for inpainting tasks.
+
+Our dataset consists of RGB image sequences, corresponding mask sequences that indicate the regions to be inpainted, and ground truth (GT) image sequences for calculating the loss during training. Each sequence contains 100 frames at a resolution of 640x480 pixels. The approach involves systematically developing and testing each new script component, adapting them to handle our inpainting dataset effectively. By reusing and building upon the existing codebase, we aim to adjust data loading mechanisms, modify model inputs, and redefine loss functions as needed for inpainting. This methodical process ensures that we maintain the integrity of the original code while extending its capabilities to suit our specific task.
+
+------------------------------------------------------------------
+
+Dataset Layout:
+	•	Root: /var/lib/docker/dataset
+	•	Subfolders: Each of the 40k folders (e.g., ffe262bc198345df) contains:
+	•	RGB_480: Input image sequences (frame_00001.png to frame_00100.png)
+	•	MASK_480: Mask sequences specifying areas to inpaint
+	•	GT_480: Ground truth image sequences for loss calculation
+
+Order of Sections to Modify, Test, and Validate:
+	1.	Argument Parsing (get_args function)
+	2.	Dataset Class (VideoDataset)
+	3.	Data Collation and DataLoader Adjustments
+	4.	Loading Pretrained Models
+	5.	Preparing Models for Training (Adding LoRA Layers)
+	6.	Modifying the Forward Pass and Loss Function
+	7.	Optimizer Setup
+	8.	Validation Function Modifications
+	9.	Saving the Final Model
+
+------------------------------------------------------------------
+1. Argument Parsing (get_args function)
+
+Summary: Parses command-line arguments needed for training.
+
+Changes Needed:
+	•	Add New Arguments:
+	•	Paths for mask and GT image sequences.
+	•	Any inpainting-specific parameters (e.g., inpainting modes, mask thresholds).
+	•	Modify Existing Arguments:
+	•	Adjust dataset-related arguments to reflect the image sequence data instead of videos.
+
+Tests:
+	•	Run the script with the new arguments.
+	•	Print parsed arguments to verify correctness.
+	•	Ensure the script does not throw errors due to argument changes.
+
+------------------------------------------------------------------
+2. Dataset Class (VideoDataset)
+
+Summary: Handles loading and preprocessing of the dataset.
+
+Changes Needed:
+	•	Modify Data Loading:
+	•	Change from loading videos to loading image sequences (RGB_480, MASK_480, GT_480).
+	•	Implement data validation to check for complete sequences and existing folders.
+	•	Handle Masks and GT Images:
+	•	Load mask sequences and GT images alongside input images.
+	•	Ensure alignment between input images, masks, and GT images.
+	•	Data Validation:
+	•	Skip sequences with less than 100 frames or missing data.
+	•	Log or report any sequences that are incomplete or invalid.
+
+Tests:
+	•	Unit Tests:
+	•	Create a small subset of the dataset with known images.
+	•	Test loading individual sequences to ensure images, masks, and GT images are correctly loaded and aligned.
+	•	Data Integrity Check:
+	•	Verify that invalid or incomplete sequences are correctly identified and skipped.
+	•	Visualization:
+	•	Optionally, visualize a few loaded sequences to manually verify correctness.
+
+------------------------------------------------------------------
+3. Data Collation and DataLoader Adjustments
+
+Summary: Prepares data batches for training.
+
+Changes Needed:
+	•	Modify collate_fn:
+	•	Adjust to batch input images, masks, and GT images.
+	•	Ensure that masks and GT images are correctly associated with their input images.
+	•	Adjust DataLoader:
+	•	Ensure the DataLoader uses the modified collate_fn.
+	•	Set appropriate batch sizes considering the additional data.
+
+Tests:
+	•	Batch Loading Test:
+	•	Run the DataLoader to load a few batches.
+	•	Verify that each batch contains correctly batched input images, masks, and GT images.
+	•	Consistency Check:
+	•	Ensure that the data within each batch is consistent (e.g., shapes match, data types are correct).
+	•	Error Handling:
+	•	Test with sequences of varying lengths to ensure the DataLoader gracefully handles them.
+
+------------------------------------------------------------------
+4. Loading Pretrained Models
+
+Summary: Loads the pretrained CogVideoX model components.
+
+Changes Needed:
+	•	Model Adjustments:
+	•	Verify that the model supports inpainting tasks.
+	•	If necessary, modify the model architecture to accommodate inpainting (e.g., adding mask processing layers).
+	•	Parameter Loading:
+	•	Ensure that all necessary parameters are loaded and that no mismatches occur.
+
+Tests:
+	•	Model Summary:
+	•	Print model summaries to verify architectures.
+	•	Compatibility Check:
+	•	Ensure the loaded models are compatible with the modifications made for inpainting.
+	•	Dry Run:
+	•	Perform a forward pass with dummy data to check for runtime errors.
+
+------------------------------------------------------------------
+5. Preparing Models for Training (Adding LoRA Layers)
+
+Summary: Freezes base model parameters and adds LoRA layers for fine-tuning.
+
+Changes Needed:
+	•	Adjust LoRA Layers:
+	•	Ensure LoRA layers are added to the appropriate parts of the model relevant for inpainting.
+	•	Modify transformer_lora_config if different layers need to be targeted.
+	•	Parameter Freezing:
+	•	Confirm that only the LoRA layers require gradients.
+
+Tests:
+	•	Parameter Verification:
+	•	Check which model parameters require gradients.
+	•	Ensure that only intended parameters (LoRA layers) are trainable.
+	•	Gradient Flow Test:
+	•	Run a forward and backward pass to ensure gradients flow only through LoRA layers.
+
+------------------------------------------------------------------
+6. Modifying the Forward Pass and Loss Function
+
+Summary: Implements the training logic, including forward passes and loss computation.
+
+Changes Needed:
+	•	Forward Pass Adjustments:
+	•	Modify the model to accept masks as input.
+	•	Incorporate masks into the computation (e.g., zero out masked regions).
+	•	Loss Function Modification:
+	•	Compute loss only over the masked regions.
+	•	Compare the model’s output with the GT images within the masked areas.
+	•	Mask Integration:
+	•	Ensure masks are correctly applied during both the forward pass and loss computation.
+
+Tests:
+	•	Loss Computation Test:
+	•	Verify that the loss is computed correctly over masked regions.
+	•	Gradient Check:
+	•	Ensure that gradients are backpropagated correctly.
+	•	Overfitting Test:
+	•	Use a small subset of data to see if the model can overfit, indicating the loss function is working.
+
+------------------------------------------------------------------
+7. Optimizer Setup
+
+Summary: Sets up the optimizer for training.
+
+Changes Needed:
+	•	Optimizer Parameters:
+	•	Adjust learning rates, weight decay, or other hyperparameters if needed for inpainting.
+	•	Optimizer Choice:
+	•	Verify if a different optimizer is more suitable for inpainting tasks.
+
+Tests:
+	•	Parameter Update Test:
+	•	Check that the optimizer updates the trainable parameters as expected.
+	•	Learning Rate Verification:
+	•	Ensure that learning rates are set correctly and adjust if necessary.
+
+------------------------------------------------------------------
+8. Validation Function Modifications
+
+Summary: Validates the model’s performance during training.
+
+Changes Needed:
+	•	Modify log_validation Function:
+	•	Change validation to perform inpainting using the validation dataset.
+	•	Instead of generating videos from prompts, input images and masks should be used to generate inpainted outputs.
+	•	Visualization:
+	•	Save or display inpainted images alongside input and GT images for comparison.
+
+Tests:
+	•	Validation Run:
+	•	Perform validation on a small set of data.
+	•	Output Inspection:
+	•	Manually inspect the inpainted outputs to assess quality.
+	•	Metric Calculation:
+	•	If possible, compute quantitative metrics (e.g., PSNR, SSIM) between inpainted and GT images.
+
+------------------------------------------------------------------
+9. Saving the Final Model
+
+Summary: Saves the trained model and LoRA weights.
+
+Changes Needed:
+	•	Ensure Model Integrity:
+	•	Modify saving functions to include any new components added for inpainting.
+	•	Compatibility Check:
+	•	Ensure that the saved model can be loaded and used for inpainting tasks.
+
+Tests:
+	•	Save and Load Test:
+	•	Save the model after training.
+	•	Load the model in a new script or session.
+	•	Perform an inpainting task to verify that the model works as expected.
+
+Additional Notes:
+	•	Data Splitting:
+	•	Before training, split your dataset into training, validation, and testing sets.
+	•	Ensure that the split is random and that all sets contain valid sequences.
+	•	Error Handling:
+	•	Implement robust error handling to manage incomplete data and unexpected issues during training.
+	•	Logging and Monitoring:
+	•	Set up logging to monitor training progress, including losses and any relevant metrics.
+	•	Use tools like TensorBoard or WandB for visualizing training progress.
+
+
+------------------------------------------------------------------
+Final Remarks:
+
+By following this step-by-step plan, you’ll systematically modify and test each part of the training script, ensuring that it works correctly for your inpainting task before moving on to the next section. This approach minimizes the risk of errors compounding across sections and helps maintain a clear understanding of each component’s functionality.
